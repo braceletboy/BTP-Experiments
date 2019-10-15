@@ -1,0 +1,18 @@
+[[source]]
+name = "pypi"
+url = "https://pypi.org/simple"
+verify_ssl = true
+
+[dev-packages]
+
+[packages]
+h5py = "*"
+scipy = "*"
+numpy = "*"
+matplotlib = "*"
+pillow = "*"
+tensorboardx = "*"
+tqdm = "*"
+
+[requires]
+python_version = "3.5"
