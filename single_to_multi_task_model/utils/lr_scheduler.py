@@ -1,14 +1,15 @@
-##+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-## Created by: Hang Zhang
-## ECE Department, Rutgers University
-## Email: zhang.hang@rutgers.edu
-## Copyright (c) 2017
-##
-## This source code is licensed under the MIT-style license found in the
-## LICENSE file in the root directory of this source tree
-##+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+'''
+Created by: Hang Zhang
+ECE Department, Rutgers University
+Email: zhang.hang@rutgers.edu
+Copyright (c) 2017
+
+This source code is licensed under the MIT-style license found in the
+LICENSE file in the root directory of this source tree
+'''
 
 import math
+
 
 class LR_Scheduler(object):
     """Learning Rate Scheduler
@@ -22,13 +23,19 @@ class LR_Scheduler(object):
     Args:
         args:
           :attr:`args.lr_scheduler` lr scheduler mode (`cos`, `poly`),
-          :attr:`args.lr` base learning rate, :attr:`args.epochs` number of epochs,
+          :attr:`args.lr` base learning rate,
+          :attr:`args.epochs` number of epochs,
           :attr:`args.lr_step`
 
         iters_per_epoch: number of iterations per epoch
     """
-    def __init__(self, mode, base_lr, num_epochs, iters_per_epoch=0,
-                 lr_step=0, warmup_epochs=0):
+    def __init__(self,
+                 mode,
+                 base_lr,
+                 num_epochs,
+                 iters_per_epoch=0,
+                 lr_step=0,
+                 warmup_epochs=0):
         self.mode = mode
         print('Using {} LR Scheduler!'.format(self.mode))
         self.lr = base_lr
@@ -47,9 +54,9 @@ class LR_Scheduler(object):
         elif self.mode == 'poly':
             lr = self.lr * pow((1 - 1.0 * T / self.N), 0.9)
         elif self.mode == 'step':
-            lr = self.lr * (0.1 ** (epoch // self.lr_step))
+            lr = self.lr * (0.1**(epoch // self.lr_step))
         else:
-            raise NotImplemented
+            raise NotImplementedError
         # warm up lr schedule
         if self.warmup_iters > 0 and T < self.warmup_iters:
             lr = lr * 1.0 * T / self.warmup_iters

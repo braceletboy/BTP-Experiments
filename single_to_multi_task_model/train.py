@@ -1,20 +1,32 @@
+'''
+@file: train.py
+
+This file contains the main script necessary for training and validation.
+
+@author: Jianfeng Zhang (jf.zhang958@outlook.com), Rukmangadh Sai Myana
+(rukman.sai@gmail.com)
+'''
+
 import argparse
-import os, torch
+import os
+import torch
 import numpy as np
 from tqdm import tqdm
 
 from mypath import Path
 from dataloaders import make_data_loader
 from modeling.sync_batchnorm.replicate import patch_replication_callback
-from modeling.deeplab import *
-from utils.loss import SegmentationLosses
-from utils.calculate_weights import calculate_weigths_labels
+from modeling.deepmultilab import DeepMultiLab
+from utils.loss import KnowledgeDistillationLosses
+from utils.calculate_weights import calculate_weights_labels
 from utils.lr_scheduler import LR_Scheduler
+from utils.load_models import load_teacher_models
 from utils.saver import Saver
 from utils.summaries import TensorboardSummary
 from utils.metrics import Evaluator
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+
 
 class Trainer(object):
     def __init__(self, args):
@@ -26,56 +38,73 @@ class Trainer(object):
         # Define Tensorboard Summary
         self.summary = TensorboardSummary(self.saver.experiment_dir)
         self.writer = self.summary.create_summary()
-        
+
         # Define Dataloader
         kwargs = {'num_workers': args.workers, 'pin_memory': True}
-        self.train_loader, self.val_loader, self.test_loader, self.nclass = make_data_loader(args, **kwargs)
+        (self.train_loader, self.val_loader, self.test_loader,
+         self.nclass) = make_data_loader(args, **kwargs)
 
         # Define network
-        model = DeepLab(num_classes=self.nclass,
-                        backbone=args.backbone,
-                        output_stride=args.out_stride,
-                        sync_bn=args.sync_bn,
-                        freeze_bn=args.freeze_bn)
+        model = DeepMultiLab(num_tasks=args.num_tasks,
+                             backbone=args.backbone,
+                             output_stride=args.out_stride,
+                             num_classes=self.nclass,
+                             sync_bn=args.sync_bn,
+                             freeze_bn=args.freeze_bn)
 
-        train_params = [{'params': model.get_1x_lr_params(), 'lr': args.lr},
-                        {'params': model.get_10x_lr_params(), 'lr': args.lr * 10}]
+        # Using cuda
+        if args.cuda:
+            self.model = torch.nn.DataParallel(self.model,
+                                               device_ids=self.args.gpu_ids)
+            patch_replication_callback(self.model)
+            self.model = self.model.cuda()
+
+        train_params = [{
+            'params': model.get_1x_lr_params(),
+            'lr': args.lr
+        }, {
+            'params': model.get_10x_lr_params(),
+            'lr': args.lr * 10
+        }]
 
         # Define Optimizer
-        optimizer = torch.optim.SGD(train_params, momentum=args.momentum,
-                                    weight_decay=args.weight_decay, nesterov=args.nesterov)
+        optimizer = torch.optim.SGD(train_params,
+                                    momentum=args.momentum,
+                                    weight_decay=args.weight_decay,
+                                    nesterov=args.nesterov)
 
         # Define Criterion
         # whether to use class balanced weights
         if args.use_balanced_weights:
-            classes_weights_path = os.path.join(Path.db_root_dir(args.dataset), args.dataset+'_classes_weights.npy')
+            classes_weights_path = os.path.join(
+                Path.db_root_dir(args.dataset),
+                args.dataset + '_classes_weights.npy')
             if os.path.isfile(classes_weights_path):
                 weight = np.load(classes_weights_path)
             else:
-                weight = calculate_weigths_labels(args.dataset, self.train_loader, self.nclass)
+                weight = calculate_weights_labels(args.dataset,
+                                                  self.train_loader,
+                                                  self.nclass)
             weight = torch.from_numpy(weight.astype(np.float32))
         else:
             weight = None
-        self.criterion = SegmentationLosses(weight=weight, cuda=args.cuda).build_loss(mode=args.loss_type)
+        self.criterion = KnowledgeDistillationLosses(
+            weight=weight, cuda=args.cuda).build_loss(mode=args.transfer_loss)
         self.model, self.optimizer = model, optimizer
-        
-        # Define Evaluator
-        self.evaluator = Evaluator(self.nclass)
-        # Define lr scheduler
-        self.scheduler = LR_Scheduler(args.lr_scheduler, args.lr,
-                                            args.epochs, len(self.train_loader))
 
-        # Using cuda
-        if args.cuda:
-            self.model = torch.nn.DataParallel(self.model, device_ids=self.args.gpu_ids)
-            patch_replication_callback(self.model)
-            self.model = self.model.cuda()
+        # Define Evaluator
+        self.evaluator_list = [Evaluator(self.nclass)]
+        # Define lr scheduler
+        self.scheduler = LR_Scheduler(args.lr_scheduler, args.lr, args.epochs,
+                                      len(self.train_loader))
+        self.teacher_models = load_teacher_models(args, num_classes=5)
 
         # Resuming checkpoint
         self.best_pred = 0.0
         if args.resume is not None:
             if not os.path.isfile(args.resume):
-                raise RuntimeError("=> no checkpoint found at '{}'" .format(args.resume))
+                raise RuntimeError("=> no checkpoint found at '{}'".format(
+                    args.resume))
             checkpoint = torch.load(args.resume)
             args.start_epoch = checkpoint['epoch']
             if args.cuda:
@@ -85,8 +114,8 @@ class Trainer(object):
             if not args.ft:
                 self.optimizer.load_state_dict(checkpoint['optimizer'])
             self.best_pred = checkpoint['best_pred']
-            print("=> loaded checkpoint '{}' (epoch {})"
-                  .format(args.resume, checkpoint['epoch']))
+            print("=> loaded checkpoint '{}' (epoch {})".format(
+                args.resume, checkpoint['epoch']))
 
         # Clear start epoch if fine-tuning
         if args.ft:
@@ -94,168 +123,266 @@ class Trainer(object):
 
     def training(self, epoch):
         train_loss = 0.0
-        self.model.train()
+        self.model.train()  # set the module in training mode
         tbar = tqdm(self.train_loader)
         num_img_tr = len(self.train_loader)
         for i, sample in enumerate(tbar):
-            image, target = sample['image'], sample['label']
+            image = sample['image'], sample['label']
+            target_list = [model(image) for model in self.teacher_models]
             if self.args.cuda:
-                image, target = image.cuda(), target.cuda()
+                image = image.cuda()
             self.scheduler(self.optimizer, i, epoch, self.best_pred)
             self.optimizer.zero_grad()
-            output = self.model(image)
-            loss = self.criterion(output, target)
+            output_list = self.model(image)
+            loss = self.criterion(output_list, target_list)
             loss.backward()
             self.optimizer.step()
             train_loss += loss.item()
             tbar.set_description('Train loss: %.3f' % (train_loss / (i + 1)))
-            self.writer.add_scalar('train/total_loss_iter', loss.item(), i + num_img_tr * epoch)
+            self.writer.add_scalar('train/total_loss_iter', loss.item(),
+                                   i + num_img_tr * epoch)
 
             # Show 10 * 3 inference results each epoch
             if i % (num_img_tr // 10) == 0:
                 global_step = i + num_img_tr * epoch
-                self.summary.visualize_image(self.writer, self.args.dataset, image, target, output, global_step)
+                self.summary.visualize_image(self.writer, self.args.dataset,
+                                             image, target_list, output_list,
+                                             global_step)
 
         self.writer.add_scalar('train/total_loss_epoch', train_loss, epoch)
-        print('[Epoch: %d, numImages: %5d]' % (epoch, i * self.args.batch_size + image.data.shape[0]))
+        print('[Epoch: %d, numImages: %5d]' %
+              (epoch, i * self.args.batch_size + image.data.shape[0]))
         print('Loss: %.3f' % train_loss)
 
         if self.args.no_val:
             # save checkpoint every epoch
             is_best = False
-            self.saver.save_checkpoint({
-                'epoch': epoch + 1,
-                'state_dict': self.model.module.state_dict(),
-                'optimizer': self.optimizer.state_dict(),
-                'best_pred': self.best_pred,
-            }, is_best)
-
+            self.saver.save_checkpoint(
+                {
+                    'epoch': epoch + 1,
+                    'state_dict': self.model.module.state_dict(),
+                    'optimizer': self.optimizer.state_dict(),
+                    'best_pred': self.best_pred,
+                }, is_best)
 
     def validation(self, epoch):
-        self.model.eval()
-        self.evaluator.reset()
+        self.model.eval()  # set the model in evaluation mode
+        for evaluator in self.evaluator_list:
+            evaluator.reset()
         tbar = tqdm(self.val_loader, desc='\r')
         test_loss = 0.0
         for i, sample in enumerate(tbar):
-            image, target = sample['image'], sample['label']
+            image = sample['image']
+            target_list = [model(image) for model in self.teacher_models]
             if self.args.cuda:
-                image, target = image.cuda(), target.cuda()
-            with torch.no_grad():
-                output = self.model(image)
-            loss = self.criterion(output, target)
+                image = image.cuda()
+            with torch.no_grad():  # deactivate autograd to save memory
+                output_list = self.model(image)
+            loss = self.criterion(output_list, target_list)
             test_loss += loss.item()
             tbar.set_description('Test loss: %.3f' % (test_loss / (i + 1)))
-            pred = output.data.cpu().numpy()
-            target = target.cpu().numpy()
-            pred = np.argmax(pred, axis=1)
+            pred_list = [output.data.cpu().numpy() for output in output_list]
+            target_list = [target.cpu().numpy() for target in target_list]
+            pred_list = [np.argmax(pred, axis=1) for pred in pred_list]
             # Add batch sample into evaluator
-            self.evaluator.add_batch(target, pred)
+            for idx in range(self.args.num_tasks):
+                evaluator = self.evaluator_list[idx]
+                target = target_list[idx]
+                pred = pred_list[idx]
+                evaluator.add_batch(target, pred)
 
         # Fast test during the training
-        Acc = self.evaluator.Pixel_Accuracy()
-        Acc_class = self.evaluator.Pixel_Accuracy_Class()
-        mIoU = self.evaluator.Mean_Intersection_over_Union()
-        FWIoU = self.evaluator.Frequency_Weighted_Intersection_over_Union()
         self.writer.add_scalar('val/total_loss_epoch', test_loss, epoch)
-        self.writer.add_scalar('val/mIoU', mIoU, epoch)
-        self.writer.add_scalar('val/Acc', Acc, epoch)
-        self.writer.add_scalar('val/Acc_class', Acc_class, epoch)
-        self.writer.add_scalar('val/fwIoU', FWIoU, epoch)
-        print('Validation:')
-        print('[Epoch: %d, numImages: %5d]' % (epoch, i * self.args.batch_size + image.data.shape[0]))
-        print("Acc:{}, Acc_class:{}, mIoU:{}, fwIoU: {}".format(Acc, Acc_class, mIoU, FWIoU))
         print('Loss: %.3f' % test_loss)
+        for idx in range(self.args.num_tasks):
+            evaluator = self.evaluator_list[idx]
+            Acc = evaluator.Pixel_Accuracy()
+            Acc_class = evaluator.Pixel_Accuracy_Class()
+            mIoU = evaluator.Mean_Intersection_over_Union()
+            FWIoU = evaluator.Frequency_Weighted_Intersection_over_Union()
+            self.writer.add_scalar('val/mIoU_task{}'.format(idx), mIoU, epoch)
+            self.writer.add_scalar('val/Acc_task{}'.format(idx), Acc, epoch)
+            self.writer.add_scalar('val/Acc_class_task{}'.format(idx),
+                                   Acc_class, epoch)
+            self.writer.add_scalar('val/fwIoU_task{}'.format(idx), FWIoU,
+                                   epoch)
+            print('Validation of task-{}:'.format(idx))
+            print('[Epoch: %d, numImages: %5d]' %
+                  (epoch, i * self.args.batch_size + image.data.shape[0]))
+            print("Acc:{}, Acc_class:{}, mIoU:{}, fwIoU: {}".format(
+                Acc, Acc_class, mIoU, FWIoU))
 
         new_pred = mIoU
         if new_pred > self.best_pred:
             is_best = True
             self.best_pred = new_pred
-            self.saver.save_checkpoint({
-                'epoch': epoch + 1,
-                'state_dict': self.model.module.state_dict(),
-                'optimizer': self.optimizer.state_dict(),
-                'best_pred': self.best_pred,
-            }, is_best)
+            self.saver.save_checkpoint(
+                {
+                    'epoch': epoch + 1,
+                    'state_dict': self.model.module.state_dict(),
+                    'optimizer': self.optimizer.state_dict(),
+                    'best_pred': self.best_pred,
+                }, is_best)
+
 
 def main():
-    parser = argparse.ArgumentParser(description="PyTorch DeeplabV3Plus Training")
-    parser.add_argument('--backbone', type=str, default='resnet',
+    parser = argparse.ArgumentParser(description="Single to Multi-task "
+                                     "Knowledge Distillation using "
+                                     "DeepLabV3Plus as backbone.")
+    # general parameters
+    parser.add_argument('--deeplab-backbone',
+                        type=str,
+                        default='resnet',
                         choices=['resnet', 'xception', 'drn', 'mobilenet'],
-                        help='backbone name (default: resnet)')
-    parser.add_argument('--out-stride', type=int, default=16,
-                        help='network output stride (default: 8)')
-    parser.add_argument('--dataset', type=str, default='nyu',
+                        help='backbone used in the deeplab model '
+                        '(default: resnet)')
+    parser.add_argument('--num-tasks',
+                        type=int,
+                        default=2,
+                        help='the number of tasks in the multi-task model')
+    parser.add_argument('--output-stride',
+                        type=int,
+                        default=16,
+                        help='output stride defined in the DeepLabV3Plus paper'
+                        ' (default: 8)')
+    parser.add_argument('--segmentation-dataset',
+                        type=str,
+                        default='cityscapes',
                         choices=['pascal', 'coco', 'cityscapes', 'nyu'],
-                        help='dataset name (default: pascal)')
-    parser.add_argument('--use-sbd', action='store_true', default=True,
+                        help='dataset used for segmentation (default: pascal)')
+    parser.add_argument('--use-sbd',
+                        action='store_true',
+                        default=True,
                         help='whether to use SBD dataset (default: True)')
-    parser.add_argument('--workers', type=int, default=2,
-                        metavar='N', help='dataloader threads')
-    parser.add_argument('--base-size', type=int, default=513,
-                        help='base image size')
-    parser.add_argument('--crop-size', type=int, default=513,
-                        help='crop image size')
-    parser.add_argument('--sync-bn', type=bool, default=None,
+    parser.add_argument('--dataloader-workers',
+                        type=int,
+                        default=2,
+                        metavar='N',
+                        help='number of dataloader threads (default: 2)')
+    parser.add_argument('--base-size',
+                        type=int,
+                        default=513,
+                        help='base image size (default: 513)')
+    parser.add_argument('--crop-size',
+                        type=int,
+                        default=513,
+                        help='crop image size (default: 513)')
+    parser.add_argument('--sync-bn',
+                        type=bool,
+                        default=None,
                         help='whether to use sync bn (default: auto)')
-    parser.add_argument('--freeze-bn', type=bool, default=False,
-                        help='whether to freeze bn parameters (default: False)')
-    parser.add_argument('--loss-type', type=str, default='ce',
-                        choices=['ce', 'focal'],
-                        help='loss func type (default: ce)')
-    # training hyper params
-    parser.add_argument('--epochs', type=int, default=None, metavar='N',
-                        help='number of epochs to train (default: auto)')
-    parser.add_argument('--start_epoch', type=int, default=0,
-                        metavar='N', help='start epochs (default:0)')
-    parser.add_argument('--batch-size', type=int, default=None,
-                        metavar='N', help='input batch size for \
+    parser.add_argument(
+        '--freeze-bn',
+        type=bool,
+        default=False,
+        help='whether to freeze bn parameters (default: False)')
+    parser.add_argument('--transfer-loss',
+                        type=str,
+                        default='kl',
+                        choices=['ce', 'kl', 'mi'],
+                        help='loss func type (default: kl)')
+    # training hyperparameters
+    parser.add_argument('--epochs',
+                        type=int,
+                        default=None,
+                        metavar='N',
+                        help='the maximum number of epochs to train '
+                        '(default: auto)')
+    parser.add_argument('--start_epoch',
+                        type=int,
+                        default=0,
+                        metavar='N',
+                        help='The epoch value to start at (default:0)')
+    parser.add_argument('--batch-size',
+                        type=int,
+                        default=None,
+                        metavar='N',
+                        help='input batch size for \
                                 training (default: auto)')
-    parser.add_argument('--test-batch-size', type=int, default=None,
-                        metavar='N', help='input batch size for \
+    parser.add_argument('--test-batch-size',
+                        type=int,
+                        default=None,
+                        metavar='N',
+                        help='input batch size for \
                                 testing (default: auto)')
-    parser.add_argument('--use-balanced-weights', action='store_true', default=False,
-                        help='whether to use balanced weights (default: False)')
+    parser.add_argument(
+        '--use-balanced-weights',
+        action='store_true',
+        default=False,
+        help='whether to use balanced weights (default: False)')
     # optimizer params
-    parser.add_argument('--lr', type=float, default=None, metavar='LR',
+    parser.add_argument('--lr',
+                        type=float,
+                        default=None,
+                        metavar='LR',
                         help='learning rate (default: auto)')
-    parser.add_argument('--lr-scheduler', type=str, default='poly',
+    parser.add_argument('--lr-scheduler',
+                        type=str,
+                        default='poly',
                         choices=['poly', 'step', 'cos'],
                         help='lr scheduler mode: (default: poly)')
-    parser.add_argument('--momentum', type=float, default=0.9,
-                        metavar='M', help='momentum (default: 0.9)')
-    parser.add_argument('--weight-decay', type=float, default=5e-4,
-                        metavar='M', help='w-decay (default: 5e-4)')
-    parser.add_argument('--nesterov', action='store_true', default=False,
-                        help='whether use nesterov (default: False)')
+    parser.add_argument('--momentum',
+                        type=float,
+                        default=0.9,
+                        metavar='M',
+                        help='momentum (default: 0.9)')
+    parser.add_argument('--weight-decay',
+                        type=float,
+                        default=5e-4,
+                        metavar='M',
+                        help='w-decay (default: 5e-4)')
+    parser.add_argument('--nesterov',
+                        action='store_true',
+                        default=False,
+                        help='whether to use nesterov (default: False)')
     # cuda, seed and logging
-    parser.add_argument('--no-cuda', action='store_true', default=
-                        False, help='disables CUDA training')
-    parser.add_argument('--gpu-ids', type=str, default='0',
+    parser.add_argument('--no-cuda',
+                        action='store_true',
+                        default=False,
+                        help='disables CUDA training')
+    parser.add_argument('--gpu-ids',
+                        type=str,
+                        default='0',
                         help='use which gpu to train, must be a \
                         comma-separated list of integers only (default=0)')
-    parser.add_argument('--seed', type=int, default=1, metavar='S',
+    parser.add_argument('--seed',
+                        type=int,
+                        default=1,
+                        metavar='S',
                         help='random seed (default: 1)')
     # checking point
-    parser.add_argument('--resume', type=str, default=None,
+    parser.add_argument('--resume',
+                        type=str,
+                        default=None,
                         help='put the path to resuming file if needed')
-    parser.add_argument('--checkname', type=str, default=None,
-                        help='set the checkpoint name')
+    parser.add_argument('--checkname',
+                        type=str,
+                        default=None,
+                        help='set the checkpoint filename')
     # finetuning pre-trained models
-    parser.add_argument('--ft', action='store_true', default=False,
+    parser.add_argument('--ft',
+                        action='store_true',
+                        default=False,
                         help='finetuning on a different dataset')
     # evaluation option
-    parser.add_argument('--eval-interval', type=int, default=1,
-                        help='evaluuation interval (default: 1)')
-    parser.add_argument('--no-val', action='store_true', default=False,
+    parser.add_argument('--eval-interval',
+                        type=int,
+                        default=1,
+                        help='evaluation interval (default: 1)')
+    parser.add_argument('--no-val',
+                        action='store_true',
+                        default=False,
                         help='skip validation during training')
 
+    # Parse the arguments
     args = parser.parse_args()
     args.cuda = not args.no_cuda and torch.cuda.is_available()
     if args.cuda:
         try:
             args.gpu_ids = [int(s) for s in args.gpu_ids.split(',')]
         except ValueError:
-            raise ValueError('Argument --gpu_ids must be a comma-separated list of integers only')
+            raise ValueError('Argument --gpu_ids must be a comma-separated '
+                             'list of integers only')
 
     if args.sync_bn is None:
         if args.cuda and len(args.gpu_ids) > 1:
@@ -284,11 +411,11 @@ def main():
             'cityscapes': 0.01,
             'pascal': 0.007,
         }
-        args.lr = lrs[args.dataset.lower()] / (4 * len(args.gpu_ids)) * args.batch_size
-
+        args.lr = lrs[args.dataset.lower()] / (
+            4 * len(args.gpu_ids)) * args.batch_size
 
     if args.checkname is None:
-        args.checkname = 'deeplab-'+str(args.backbone)
+        args.checkname = 'deeplab-' + str(args.backbone)
     print(args)
     torch.manual_seed(args.seed)
     trainer = Trainer(args)
@@ -296,10 +423,12 @@ def main():
     print('Total Epoches:', trainer.args.epochs)
     for epoch in range(trainer.args.start_epoch, trainer.args.epochs):
         trainer.training(epoch)
-        if not trainer.args.no_val and epoch % args.eval_interval == (args.eval_interval - 1):
+        if not trainer.args.no_val and epoch % args.eval_interval == (
+                args.eval_interval - 1):
             trainer.validation(epoch)
 
     trainer.writer.close()
 
+
 if __name__ == "__main__":
-   main()
+    main()
