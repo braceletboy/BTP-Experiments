@@ -43,14 +43,14 @@ class Encoder(nn.Module):
         self.backbone = build_backbone(backbone, output_stride, BatchNorm)
         self.aspp = build_aspp(backbone, output_stride, BatchNorm)
 
-    def foward(self, input):
+    def forward(self, input):
         '''
         The forward pass function of the encoder module.
 
         @param input: The input of the encoder.
         @returns: The enriched features for the decoder input.
         '''
-        backbone_features, low_level_features = self.backbone
+        backbone_features, low_level_features = self.backbone(input)
         features = self.aspp(backbone_features)
         return features, low_level_features
 

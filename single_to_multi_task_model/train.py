@@ -51,14 +51,6 @@ class Trainer(object):
                              num_classes=self.nclass,
                              sync_bn=args.sync_bn,
                              freeze_bn=args.freeze_bn)
-        self.model = model
-
-        # Using cuda
-        if args.cuda:
-            self.model = torch.nn.DataParallel(self.model,
-                                               device_ids=self.args.gpu_ids)
-            patch_replication_callback(self.model)
-            self.model = self.model.cuda()
 
         train_params = [{
             'params': model.get_1x_lr_params(),
@@ -93,7 +85,7 @@ class Trainer(object):
             weight=weight,
             cuda=args.cuda).build_loss(weighting_mode=args.weighting_mode,
                                        loss_mode=args.transfer_loss)
-        self.optimizer = optimizer
+        self.model, self.optimizer = model, optimizer
 
         # Define Evaluator
         self.evaluator_list = [Evaluator(self.nclass)]
@@ -101,6 +93,13 @@ class Trainer(object):
         self.scheduler = LR_Scheduler(args.lr_scheduler, args.lr, args.epochs,
                                       len(self.train_loader))
         self.teacher_models = load_teacher_models(args, num_classes=5)
+
+        # Using cuda
+        if args.cuda:
+            self.model = torch.nn.DataParallel(self.model,
+                                               device_ids=self.args.gpu_ids)
+            patch_replication_callback(self.model)
+            self.model = self.model.cuda()
 
         # Resuming checkpoint
         self.best_pred = 0.0
@@ -131,9 +130,11 @@ class Trainer(object):
         num_img_tr = len(self.train_loader)
         for i, sample in enumerate(tbar):
             image = sample['image']
-            target_list = [model(image) for model in self.teacher_models]
             if self.args.cuda:
                 image = image.cuda()
+                target_list = [model(image).cuda() for model in self.teacher_models]
+            else:
+                target_list = [model(image) for model in self.teacher_models]
             self.scheduler(self.optimizer, i, epoch, self.best_pred)
             self.optimizer.zero_grad()
             output_list = self.model(image)
@@ -176,9 +177,11 @@ class Trainer(object):
         test_loss = 0.0
         for i, sample in enumerate(tbar):
             image = sample['image']
-            target_list = [model(image) for model in self.teacher_models]
             if self.args.cuda:
                 image = image.cuda()
+                target_list = [model(image).cuda() for model in self.teacher_models]
+            else:
+                target_list = [model(image) for model in self.teacher_models]
             with torch.no_grad():  # deactivate autograd to save memory
                 output_list = self.model(image)
             loss = self.criterion(output_list, target_list)

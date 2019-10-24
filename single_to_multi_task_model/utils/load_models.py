@@ -39,11 +39,9 @@ def load_teacher_models(args, filename='checkpoint.pth.tar', **kwargs):
         runs = sorted(glob(os.path.join(directory, 'experiment_*')))
         latest_experiment_dir = runs[-1]
 
-        if args.cuda:
-            device = torch.device('cuda')
-        else:
-            device = torch.device('cpu')
-        checkpoint = torch.load(os.path.join(latest_experiment_dir, filename))
+        device = torch.device('cpu')
+        checkpoint = torch.load(os.path.join(latest_experiment_dir, filename),
+                                map_location=device)
         model = DeepLab(args.backbone, args.output_stride, num_classes,
                         args.sync_bn, args.freeze_bn)
         model.load_state_dict(checkpoint['state_dict'], False)
