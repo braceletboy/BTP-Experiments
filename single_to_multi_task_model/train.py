@@ -43,6 +43,7 @@ class Trainer(object):
         kwargs = {'num_workers': args.workers, 'pin_memory': True}
         (self.train_loader, self.val_loader, self.test_loader,
          self.nclass) = make_data_loader(args, **kwargs)
+        assert self.nclass % args.num_tasks == 0
 
         # Define network
         model = DeepMultiLab(num_tasks=args.num_tasks,
@@ -93,7 +94,8 @@ class Trainer(object):
         self.scheduler = LR_Scheduler(args.lr_scheduler, args.lr, args.epochs,
                                       len(self.train_loader))
         self.teacher_models = load_teacher_models(args,
-                                                  num_classes=self.nclass)
+                                                  num_classes=(self.nclass /
+                                                               args.num_tasks))
 
         # Using cuda
         if args.cuda:
@@ -194,7 +196,9 @@ class Trainer(object):
             tbar.set_description('Test loss: %.3f' % (test_loss / (i + 1)))
             pred_list = [output.data.cpu().numpy() for output in output_list]
             target_list = [target.cpu().numpy() for target in target_list]
+            # Finding the predicted and target labels
             pred_list = [np.argmax(pred, axis=1) for pred in pred_list]
+            target_list = [np.argmax(target, axis=1) for target in target_list]
             # Add batch sample into evaluator
             for idx in range(self.args.num_tasks):
                 evaluator = self.evaluator_list[idx]
