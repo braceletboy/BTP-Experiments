@@ -31,14 +31,16 @@ class DeepMultiLab(nn.Module):
         @param freeze_bn: Whether to freeze the Batch Norm parameters or not.
         '''
         super(DeepMultiLab, self).__init__()
+        assert num_classes % num_tasks == 0
         if sync_bn is True:
             BatchNorm = SynchronizedBatchNorm2d
         else:
             BatchNorm = nn.BatchNorm2d
 
         self.encoder = build_encoder(backbone, output_stride, BatchNorm)
-        self.decoder_list = nn.ModuleList([build_decoder(num_classes, backbone,
-                                                         BatchNorm)]*num_tasks)
+        self.decoder_list = nn.ModuleList(
+            [build_decoder(num_classes / num_tasks, backbone, BatchNorm)] *
+            num_tasks)
 
         if freeze_bn:
             self.freeze_bn()

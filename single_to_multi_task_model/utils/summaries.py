@@ -47,8 +47,8 @@ class TensorboardSummary(object):
                                    normalize=False,
                                    range=(0, 255))
             writer.add_image('Predicted label', grid_image, global_step)
-            grid_image = make_grid(decode_seg_map_sequence(torch.squeeze(
-                target[:3], 1).detach().cpu().numpy(),
+            grid_image = make_grid(decode_seg_map_sequence(torch.max(
+                target[:3], 1)[1].detach().cpu().numpy(),
                                                            dataset=dataset),
                                    3,
                                    normalize=False,
