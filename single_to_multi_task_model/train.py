@@ -89,7 +89,10 @@ class Trainer(object):
             weight = torch.from_numpy(weight.astype(np.float32))
         else:
             weight = None
-        self.criterion = MultiTaskLosses(weight=weight, cuda=args.cuda).build_loss(weighting_mode=args.weighting_mode, loss_mode=args.transfer_loss)
+        self.criterion = MultiTaskLosses(
+            weight=weight,
+            cuda=args.cuda).build_loss(weighting_mode=args.weighting_mode,
+                                       loss_mode=args.transfer_loss)
         self.optimizer = optimizer
 
         # Define Evaluator
