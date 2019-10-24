@@ -37,10 +37,8 @@ class DeepMultiLab(nn.Module):
             BatchNorm = nn.BatchNorm2d
 
         self.encoder = build_encoder(backbone, output_stride, BatchNorm)
-        self.decoder_list = [None] * num_tasks
-        for idx in range(num_tasks):
-            self.decoder_list[idx] = build_decoder(num_classes, backbone,
-                                                   BatchNorm)
+        self.decoder_list = nn.ModuleList([build_decoder(num_classes, backbone,
+                                                         BatchNorm)]*num_tasks)
 
         if freeze_bn:
             self.freeze_bn()

@@ -92,7 +92,8 @@ class Trainer(object):
         # Define lr scheduler
         self.scheduler = LR_Scheduler(args.lr_scheduler, args.lr, args.epochs,
                                       len(self.train_loader))
-        self.teacher_models = load_teacher_models(args, num_classes=5)
+        self.teacher_models = load_teacher_models(args,
+                                                  num_classes=self.nclass)
 
         # Using cuda
         if args.cuda:
@@ -131,8 +132,10 @@ class Trainer(object):
         for i, sample in enumerate(tbar):
             image = sample['image']
             if self.args.cuda:
+                target_list = [
+                    model(image).cuda() for model in self.teacher_models
+                ]
                 image = image.cuda()
-                target_list = [model(image).cuda() for model in self.teacher_models]
             else:
                 target_list = [model(image) for model in self.teacher_models]
             self.scheduler(self.optimizer, i, epoch, self.best_pred)
@@ -178,8 +181,10 @@ class Trainer(object):
         for i, sample in enumerate(tbar):
             image = sample['image']
             if self.args.cuda:
+                target_list = [
+                    model(image).cuda() for model in self.teacher_models
+                ]
                 image = image.cuda()
-                target_list = [model(image).cuda() for model in self.teacher_models]
             else:
                 target_list = [model(image) for model in self.teacher_models]
             with torch.no_grad():  # deactivate autograd to save memory

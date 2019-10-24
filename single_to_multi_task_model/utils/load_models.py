@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-
 '''
 @file: load_models.py
 
@@ -10,12 +9,10 @@ This file contains useful functions for loading pre trained models.
 @mail: rukman.sai@gmail.com
 '''
 
-
 import os
 import torch
 from mypath import Path
 from modeling.deeplab import DeepLab
-from modeling.sync_batchnorm.replicate import patch_replication_callback
 from glob import glob
 
 
@@ -32,10 +29,9 @@ def load_teacher_models(args, filename='checkpoint.pth.tar', **kwargs):
     root_dirs_list = Path.pm_root_dirs('segmentation')
     assert 'num_classes' in kwargs
     num_classes = kwargs['num_classes']
-    models_list = []
+    models_list = torch.nn.ModuleList()
     for root_dir in root_dirs_list:
-        directory = os.path.join(root_dir, 'run', args.dataset,
-                                 args.checkname)
+        directory = os.path.join(root_dir, 'run', args.dataset, args.checkname)
         runs = sorted(glob(os.path.join(directory, 'experiment_*')))
         latest_experiment_dir = runs[-1]
 
