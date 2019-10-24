@@ -13,8 +13,9 @@ This file contains useful functions for loading pre trained models.
 
 import os
 import torch
-from ..mypath import Path
-from ..modeling.deeplab import DeepLab
+from mypath import Path
+from modeling.deeplab import DeepLab
+from modeling.sync_batchnorm.replicate import patch_replication_callback
 from glob import glob
 
 
@@ -42,11 +43,9 @@ def load_teacher_models(args, filename='checkpoint.pth.tar', **kwargs):
             device = torch.device('cuda')
         else:
             device = torch.device('cpu')
-        checkpoint = torch.load(os.path.join(latest_experiment_dir, filename),
-                                map_location=device)
+        checkpoint = torch.load(os.path.join(latest_experiment_dir, filename))
         model = DeepLab(args.backbone, args.output_stride, num_classes,
                         args.sync_bn, args.freeze_bn)
-        model.load_state_dict(checkpoint['state_dict'])
-        if args.cuda:
-            model.cuda()
+        model.load_state_dict(checkpoint['state_dict'], False)
         models_list.append(model)
+    return models_list

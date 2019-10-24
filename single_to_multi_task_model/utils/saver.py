@@ -77,10 +77,11 @@ class Saver(object):
         p['output_stride'] = self.args.output_stride
         p['lr'] = self.args.lr
         p['lr_scheduler'] = self.args.lr_scheduler
-        p['loss_type'] = self.args.loss_type
+        p['weighting_mode'] = self.args.weighting_mode
+        p['transfer_loss'] = self.args.transfer_loss
         p['epoch'] = self.args.epochs
-        p['base_img_size'] = self.args.base_img_size
-        p['crop_img_size'] = self.args.crop_img_size
+        p['base_size'] = self.args.base_size
+        p['crop_size'] = self.args.crop_size
 
         for key, val in p.items():
             log_file.write(key + ':' + str(val) + '\n')

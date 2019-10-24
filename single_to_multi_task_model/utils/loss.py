@@ -44,11 +44,14 @@ class MultiTaskLosses(object):
         for idx in range(logit_list):
             logit = logit_list[idx]
             target = target_list[idx]
-            self.criterion = KnowledgeDistillationLosses(
-                weight=self.weight,
-                cuda=self.cuda,
-                size_average=self.size_average,
-                batch_average=self.batch_average).build_loss(self.loss_mode)
+            if self.loss_mode == 'kl':
+                self.criterion = KnowledgeDistillationLosses(
+                    weight=self.weight,
+                    cuda=self.cuda,
+                    size_average=self.size_average,
+                    batch_average=self.batch_average).build_loss(self.loss_mode)
+            else:
+                raise NotImplementedError
             loss = self.criterion(logit, target)
             cumm_loss += loss
         cumm_loss /= num_tasks

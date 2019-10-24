@@ -8,7 +8,7 @@ from modeling.decoder import build_decoder
 from modeling.sync_batchnorm.batchnorm import SynchronizedBatchNorm2d
 
 
-class DeepMulitLab(nn.Module):
+class DeepMultiLab(nn.Module):
     '''
     Class for the multi-task deep lab v3 module.
     '''
@@ -30,7 +30,7 @@ class DeepMulitLab(nn.Module):
         @param sync_bn: Whether to use synchronized batch norm or not.
         @param freeze_bn: Whether to freeze the Batch Norm parameters or not.
         '''
-        super(DeepMulitLab, self).__init__()
+        super(DeepMultiLab, self).__init__()
         if sync_bn is True:
             BatchNorm = SynchronizedBatchNorm2d
         else:
@@ -78,7 +78,7 @@ class DeepMulitLab(nn.Module):
 
         @returns: The iterator.
         '''
-        modules = [self.encoder.aspp].extend(self.decoder_list)
+        modules = [self.encoder.aspp] + self.decoder_list
         for i in range(len(modules)):
             for m in modules[i].named_modules():
                 if (isinstance(m[1], nn.Conv2d)

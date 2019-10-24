@@ -17,7 +17,7 @@ from mypath import Path
 from dataloaders import make_data_loader
 from modeling.sync_batchnorm.replicate import patch_replication_callback
 from modeling.deepmultilab import DeepMultiLab
-from utils.loss import KnowledgeDistillationLosses
+from utils.loss import MultiTaskLosses
 from utils.calculate_weights import calculate_weights_labels
 from utils.lr_scheduler import LR_Scheduler
 from utils.load_models import load_teacher_models
@@ -47,10 +47,11 @@ class Trainer(object):
         # Define network
         model = DeepMultiLab(num_tasks=args.num_tasks,
                              backbone=args.backbone,
-                             output_stride=args.out_stride,
+                             output_stride=args.output_stride,
                              num_classes=self.nclass,
                              sync_bn=args.sync_bn,
                              freeze_bn=args.freeze_bn)
+        self.model = model
 
         # Using cuda
         if args.cuda:
@@ -88,9 +89,8 @@ class Trainer(object):
             weight = torch.from_numpy(weight.astype(np.float32))
         else:
             weight = None
-        self.criterion = KnowledgeDistillationLosses(
-            weight=weight, cuda=args.cuda).build_loss(mode=args.transfer_loss)
-        self.model, self.optimizer = model, optimizer
+        self.criterion = MultiTaskLosses(weight=weight, cuda=args.cuda).build_loss(weighting_mode=args.weighting_mode, loss_mode=args.transfer_loss)
+        self.optimizer = optimizer
 
         # Define Evaluator
         self.evaluator_list = [Evaluator(self.nclass)]
@@ -127,7 +127,7 @@ class Trainer(object):
         tbar = tqdm(self.train_loader)
         num_img_tr = len(self.train_loader)
         for i, sample in enumerate(tbar):
-            image = sample['image'], sample['label']
+            image = sample['image']
             target_list = [model(image) for model in self.teacher_models]
             if self.args.cuda:
                 image = image.cuda()
@@ -230,7 +230,7 @@ def main():
                                      "Knowledge Distillation using "
                                      "DeepLabV3Plus as backbone.")
     # general parameters
-    parser.add_argument('--deeplab-backbone',
+    parser.add_argument('--backbone',
                         type=str,
                         default='resnet',
                         choices=['resnet', 'xception', 'drn', 'mobilenet'],
@@ -245,7 +245,7 @@ def main():
                         default=16,
                         help='output stride defined in the DeepLabV3Plus paper'
                         ' (default: 8)')
-    parser.add_argument('--segmentation-dataset',
+    parser.add_argument('--dataset',
                         type=str,
                         default='cityscapes',
                         choices=['pascal', 'coco', 'cityscapes', 'nyu'],
@@ -254,7 +254,7 @@ def main():
                         action='store_true',
                         default=True,
                         help='whether to use SBD dataset (default: True)')
-    parser.add_argument('--dataloader-workers',
+    parser.add_argument('--workers',
                         type=int,
                         default=2,
                         metavar='N',
@@ -281,6 +281,11 @@ def main():
                         default='kl',
                         choices=['ce', 'kl', 'mi'],
                         help='loss func type (default: kl)')
+    parser.add_argument('--weighting-mode',
+                        type=str,
+                        default='w',
+                        choices=['w'],
+                        help='weighting strategy for multi-task loss')
     # training hyperparameters
     parser.add_argument('--epochs',
                         type=int,
