@@ -82,7 +82,7 @@ class Trainer(object):
         else:
             weight = None
         self.criterion = MultiTaskLosses(
-            weight=weight,
+            label_weights=weight,
             cuda=args.cuda).build_loss(weighting_mode=args.weighting_mode,
                                        loss_mode=args.transfer_loss)
         self.model, self.optimizer = model, optimizer
@@ -294,8 +294,8 @@ def main():
                         help='loss func type (default: kl)')
     parser.add_argument('--weighting-mode',
                         type=str,
-                        default='w',
-                        choices=['w'],
+                        default='eq',
+                        choices=['eq'],
                         help='weighting strategy for multi-task loss')
     # training hyperparameters
     parser.add_argument('--epochs',

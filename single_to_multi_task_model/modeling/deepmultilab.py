@@ -76,7 +76,7 @@ class DeepMultiLab(nn.Module):
 
         @returns: The iterator.
         '''
-        modules = [self.encoder.aspp] + self.decoder_list
+        modules = nn.ModuleList([self.encoder.aspp]).extend(self.decoder_list)
         for i in range(len(modules)):
             for m in modules[i].named_modules():
                 if (isinstance(m[1], nn.Conv2d)

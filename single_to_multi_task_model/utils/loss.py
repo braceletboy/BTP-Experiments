@@ -7,19 +7,19 @@ class MultiTaskLosses(object):
     The class for losses of multi-task models
     '''
     def __init__(self,
-                 weight=None,
+                 label_weights=None,
                  size_average=False,
                  batch_average=True,
                  cuda=False):
         '''
         Initialize the instance with the given parameters.
         '''
-        self.weight = weight
+        self.weight = label_weights
         self.size_average = size_average
         self.batch_average = batch_average
         self.cuda = cuda
 
-    def build_loss(self, weighting_mode='w', loss_mode='kl'):
+    def build_loss(self, weighting_mode='eq', loss_mode='kl'):
         '''
         Return the loss function specified.
 
@@ -41,7 +41,7 @@ class MultiTaskLosses(object):
         assert len(logit_list) == len(target_list)
         num_tasks = len(logit_list)
         cumm_loss = 0.0
-        for idx in range(logit_list):
+        for idx in range(num_tasks):
             logit = logit_list[idx]
             target = target_list[idx]
             if self.loss_mode == 'kl':
@@ -95,6 +95,7 @@ class KnowledgeDistillationLosses(object):
         else:
             raise NotImplementedError
 
+    # ------* TODO *------ #
     def KLDivergenceLoss(self, logit, target):
         '''
         Calculate and return the KL-Divergence loss used in knowledge
@@ -104,12 +105,11 @@ class KnowledgeDistillationLosses(object):
         @param target: The probabilities predicted by the teacher model.
         '''
         n, c, h, w = logit.size()
-        criterion = nn.KLDivLoss(weight=self.weight,
-                                 size_average=self.size_average)
+        criterion = nn.KLDivLoss(size_average=self.size_average)
         if self.cuda:
             criterion = criterion.cuda()
 
-        loss = criterion(logit, target.long())
+        loss = criterion(logit, target)
 
         if self.batch_average:
             loss /= n
