@@ -1,0 +1,109 @@
+##
+# @file: networks.yaml
+# 
+# This file contains the definitions of all the networks used in the
+# experiments
+# 
+# @author: Rukmangadh Sai Myana
+# @mail: rukman.sai@gmail.com
+# 
+
+
+# The set of networks for the BasicClassificationCNN models.
+BCCNN1:
+  - layer_type: 'conv2d'  # (N, 1, 28, 28) - Input Shape ('N' is batch_size)
+    layer_name: 'conv2d_1'
+    in_channels: 1
+    out_channels: 32
+    kernel_size: 3
+    stride: 1
+    padding: 1
+  - layer_type: 'relu'  # (N, 32, 28, 28)
+    layer_name: 'relu_1'
+  - layer_type: 'batch_norm2d'  # (N, 32, 28, 28)
+    layer_name: 'batch_norm2d_1'
+    num_features: 32
+  - layer_type: 'conv2d'  # (N, 32, 28, 28)
+    layer_name: 'conv2d_2'
+    in_channels: 32
+    out_channels: 32
+    kernel_size: 3
+    stride: 1
+    padding: 1
+  - layer_type: 'relu'  # (N, 32, 28, 28)
+    layer_name: 'relu_2'
+  - layer_type: 'batch_norm2d'  # (N, 32, 28, 28)
+    layer_name: 'batch_norm2d_2'
+    num_features: 32
+  - layer_type: 'conv2d'  # (N, 32, 28, 28)
+    layer_name: 'conv2d_3'
+    in_channels: 32
+    out_channels: 32
+    kernel_size: 5
+    stride: 2
+    padding: 2
+  - layer_type: 'relu'  # (N, 32, 14, 14)
+    layer_name: 'relu_3'
+  - layer_type: 'batch_norm2d'  # (N, 32, 14, 14)
+    layer_name: 'batch_norm2d_3'
+    num_features: 32
+  - layer_type: 'dropout2d'  # (N, 32, 14, 14)
+    layer_name: 'dropout2d_1'
+    p: 0.4
+  - layer_type: 'conv2d'  # (N, 32, 14, 14)
+    layer_name: 'conv2d_4'
+    in_channels: 32
+    out_channels: 64
+    kernel_size: 3
+    stride: 1
+    padding: 1
+  - layer_type: 'relu'  # (N, 64, 14, 14)
+    layer_name: 'relu_4'
+  - layer_type: 'batch_norm2d'  # (N, 64, 14, 14)
+    layer_name: 'batch_norm2d_4'
+    num_features: 64
+  - layer_type: 'conv2d'  # (N, 64, 14, 14)
+    layer_name: 'conv2d_5'
+    in_channels: 64
+    out_channels: 64
+    kernel_size: 3
+    stride: 1
+    padding: 1
+  - layer_type: 'relu'  # (N, 64, 14, 14)
+    layer_name: 'relu_5'
+  - layer_type: 'batch_norm2d'  # (N, 64, 14, 14)
+    layer_name: 'batch_norm2d_5'
+    num_features: 64
+  - layer_type: 'conv2d'  # (N, 64, 14, 14)
+    layer_name: 'conv2d_6'
+    in_channels: 64
+    out_channels: 64
+    kernel_size: 5
+    stride: 2
+    padding: 2
+  - layer_type: 'relu'  # (N, 64, 7, 7)
+    layer_name: 'relu_6'
+  - layer_type: 'batch_norm2d'  # (N, 64, 7, 7)
+    layer_name: 'batch_norm2d_6'
+    num_features: 64
+  - layer_type: 'dropout2d'  # (N, 64, 7, 7)
+    layer_name: 'dropout2d_2'
+    p: 0.4
+  - layer_type: 'flatten'  # (N, 64, 7, 7)
+    layer_name: 'flatten_1'
+  - layer_type: 'linear'  # (N, 64*7*7)
+    layer_name: 'linear_1'
+    in_features: 3136
+    out_features: 128
+  - layer_type: 'relu'  # (N, 128)
+    layer_name: 'relu_7'
+  - layer_type: 'batch_norm1d'  # (N, 128)
+    layer_name: 'batch_norm1d_1'
+    num_features: 128
+  - layer_type: 'dropout'  # (N, 128)
+    layer_name: 'dropout_1'
+    p: 0.4
+  - layer_type: 'linear'  # (N, 128)
+    layer_name: 'linear_2'
+    in_features: 128
+    out_features: 5  ## Output is (N, 10) shaped
