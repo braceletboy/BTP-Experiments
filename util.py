@@ -46,8 +46,12 @@ def get_summary_dir(args):
     # directory exists
     else:
         prev_experiment_dirname = max(os.listdir(summary_dir))
-        new_experiment_dirname = prev_experiment_dirname[:-1] + \
-            str(int(prev_experiment_dirname[-1]) + 1)
+        if args.resume:
+            # resuming training means no new logging directory
+            new_experiment_dirname = prev_experiment_dirname
+        else:
+            new_experiment_dirname = prev_experiment_dirname[:-1] + \
+                str(int(prev_experiment_dirname[-1]) + 1)
         summary_dir = os.path.join(summary_dir, new_experiment_dirname)
     return summary_dir
 

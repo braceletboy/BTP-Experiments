@@ -1,16 +1,14 @@
 ##
-# @file: networks.yaml
+# @file: BCCNN.yaml
 # 
-# This file contains the definitions of all the networks used in the
-# experiments
+# This file contains the BCCNN networks.
 # 
 # @author: Rukmangadh Sai Myana
 # @mail: rukman.sai@gmail.com
 # 
 
 
-# The set of networks for the BasicClassificationCNN models.
-BCCNN1:
+BCCNN[0.0]:
   - layer_type: 'conv2d'  # (N, 1, 28, 28) - Input Shape ('N' is batch_size)
     layer_name: 'conv2d_1'
     in_channels: 1
@@ -106,4 +104,4 @@ BCCNN1:
   - layer_type: 'linear'  # (N, 128)
     layer_name: 'linear_2'
     in_features: 128
-    out_features: 5  ## Output is (N, 10) shaped
+    out_features: 5  ## Output is (N, 5) shaped

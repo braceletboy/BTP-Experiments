@@ -1,2 +1,3 @@
 #!/bin/bash
-python run.py --download_data --use_cuda --pin_memory --num_epochs 45 --train_batch_size 32 --test_batch_size 64 --workers 4 --step_size 1
+#python run.py --download_data --use_cuda --pin_memory --num_epochs 45 --train_batch_size 32 --test_batch_size 64 --workers 4 --step_size 1 # task 1
+python run.py --task_number 2 --networks_file MCCNN.yaml --model_tag MCCNN --use_cuda --pin_memory --num_epochs 45 --train_batch_size 32 --test_batch_size 64 --workers 4 --labels 5 6 7 8 9 --step_size 1 --pretrained_model ./saves/mnist_task1/best_model.pt # task 2
