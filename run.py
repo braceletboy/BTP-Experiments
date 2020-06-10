@@ -28,8 +28,9 @@ if __name__ == '__main__':
                         serial number of the task being performing during the\
                         sequential learning')
     parser.add_argument('--dataset', default='mnist', type=str,
-                        choices=['mnist'], help='The dataset used for the\
-                        experimentation.')
+                        choices=['mnist', 'fashion_mnist', 'kmnist', 'svhn',
+                                 'svhn_extra'],
+                        help='The dataset used for the experimentation.')
     parser.add_argument('--download_data', action='store_true', help='Whether\
                         to download the data or not.')
     parser.add_argument('--networks_file', default='BCCNN.yaml', type=str,
